@@ -1,0 +1,5 @@
+# Ignore all data files — datasets are local only
+*
+# But keep this gitignore and the .gitkeep
+!.gitignore
+!.gitkeep

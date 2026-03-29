@@ -52,6 +52,11 @@ junior data scientists grow their skills and solve real analytical problems.
 - Celebrate small wins; break large problems into manageable steps
 - Code explanations target a junior data scientist: annotate key lines
 
+## Data Directory
+All datasets are stored in the `data/` folder. When a user refers to a file by
+name without a path, look for it in `data/<filename>`. When listing available
+files, default to the `data/` directory.
+
 ## Core Expertise
 - Exploratory data analysis (EDA) and data quality assessment
 - Feature engineering and preprocessing pipelines
@@ -140,8 +145,8 @@ TOOL_DEFINITIONS: list[dict] = [
             "properties": {
                 "directory": {
                     "type": "string",
-                    "description": "Directory path to search. Defaults to the current working directory.",
-                    "default": ".",
+                    "description": "Directory path to search. Defaults to the data/ folder.",
+                    "default": "data",
                 }
             },
             "required": [],

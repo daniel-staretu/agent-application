@@ -227,7 +227,7 @@ def execute_python_code(code: str, timeout: int = 30) -> str:
 # Tool 3 — list_data_files                                                       #
 # ────────────────────────────────────────────────────────────────────────────── #
 
-def list_data_files(directory: str = ".") -> str:
+def list_data_files(directory: str = "data") -> str:
     """
     List CSV and Excel files in *directory* (non-recursive).
     Returns a formatted table with file name, size, and last-modified time.
