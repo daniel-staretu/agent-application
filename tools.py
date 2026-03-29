@@ -154,35 +154,106 @@ def analyze_dataset(file_path: str) -> str:
 # Tool 2 — execute_python_code                                                   #
 # ────────────────────────────────────────────────────────────────────────────── #
 
-_CODE_PREAMBLE = textwrap.dedent("""\
-    import warnings
-    warnings.filterwarnings('ignore')
-    import pandas as pd
-    import numpy as np
-    try:
-        from scipy import stats
-    except ImportError:
-        pass
-    try:
-        import sklearn
-    except ImportError:
-        pass
-""")
+# Directory where generated plots are saved (served by Flask as /static/plots/)
+PLOTS_DIR = Path("static") / "plots"
+
+# Marker format embedded in stdout so app.py can extract plot paths
+PLOT_MARKER = "[PLOT:{path}]"
+
+
+def _build_preamble(plots_dir: str) -> str:
+    """
+    Build the code preamble injected before every user snippet.
+
+    Configures matplotlib to:
+      - Use the non-interactive Agg backend (no display needed)
+      - Match the dark UI theme
+      - Intercept plt.show() / plt.savefig() so figures are saved to
+        plots_dir and their paths are printed as [PLOT:...] markers
+    """
+    return f"""
+import warnings
+warnings.filterwarnings('ignore')
+import os as _os, uuid as _uuid
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import seaborn as sns
+import pandas as pd
+import numpy as np
+try:
+    from scipy import stats
+except ImportError:
+    pass
+try:
+    import sklearn
+except ImportError:
+    pass
+
+# ── Dark theme to match the DataSage UI ───────────────────────────────────
+_DARK = {{
+    'figure.facecolor':  '#1e2235',
+    'axes.facecolor':    '#1e2235',
+    'axes.edgecolor':    '#2d3148',
+    'axes.labelcolor':   '#94a3b8',
+    'axes.titlecolor':   '#c7d2fe',
+    'axes.grid':         True,
+    'grid.color':        '#2d3148',
+    'grid.linewidth':    0.6,
+    'text.color':        '#e2e8f0',
+    'xtick.color':       '#94a3b8',
+    'ytick.color':       '#94a3b8',
+    'legend.facecolor':  '#161926',
+    'legend.edgecolor':  '#2d3148',
+    'figure.figsize':    (9, 5),
+    'figure.dpi':        110,
+}}
+plt.rcParams.update(_DARK)
+sns.set_theme(style='dark', rc=_DARK)
+
+# ── Auto-save helpers ──────────────────────────────────────────────────────
+_PLOTS_DIR = r'{plots_dir}'
+_os.makedirs(_PLOTS_DIR, exist_ok=True)
+
+def _save_figure():
+    path = _os.path.join(_PLOTS_DIR, _uuid.uuid4().hex + '.png')
+    _orig_savefig(path, dpi=130, bbox_inches='tight',
+                  facecolor=plt.rcParams['figure.facecolor'])
+    plt.close('all')
+    print(f'[PLOT:{{path.replace(chr(92), "/")}}]')
+
+# Intercept plt.show() — saves the figure instead of displaying it
+plt.show = _save_figure
+
+# Intercept plt.savefig() — redirects to plots_dir with a unique name
+_orig_savefig = plt.savefig
+def _patched_savefig(fname=None, *args, **kwargs):
+    fname = _os.path.join(_PLOTS_DIR, _uuid.uuid4().hex + '.png')
+    kwargs.setdefault('dpi', 130)
+    kwargs.setdefault('bbox_inches', 'tight')
+    kwargs.setdefault('facecolor', plt.rcParams['figure.facecolor'])
+    _orig_savefig(fname, *args, **kwargs)
+    plt.close('all')
+    print(f'[PLOT:{{str(fname).replace(chr(92), "/")}}]')
+plt.savefig = _patched_savefig
+"""
 
 
 def execute_python_code(code: str, timeout: int = 30) -> str:
     """
     Execute Python code in an isolated subprocess.
 
-    The interpreter running DataSage is used so that installed libraries
-    (pandas, numpy, sklearn, etc.) are available.
-
-    Returns stdout + stderr truncated to 4 000 characters.
+    matplotlib figures are automatically saved to static/plots/ and their
+    paths are embedded in the returned string as [PLOT:...] markers so
+    app.py can extract them and send them to the browser.
 
     NOTE: This does NOT provide strong sandboxing. It is designed for a
     trusted analyst environment, not a public-facing service.
     """
-    full_code = _CODE_PREAMBLE + "\n" + code
+    plots_dir = str(PLOTS_DIR.resolve())
+    preamble = _build_preamble(plots_dir)
+    full_code = preamble + "\n" + code
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".py", delete=False, encoding="utf-8"

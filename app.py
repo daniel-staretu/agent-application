@@ -13,10 +13,12 @@ Routes
 
 import json
 import os
+import re
 import secrets
 import threading
+from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, render_template, request, send_from_directory, session
 
 try:
     from dotenv import load_dotenv
@@ -40,6 +42,13 @@ _tl = threading.local()
 # ── WebDataSageAgent ──────────────────────────────────────────────────────────
 # Subclass that captures tool calls without modifying agent.py
 
+# Regex to extract [PLOT:/absolute/path/to/file.png] markers from tool output
+_PLOT_MARKER_RE = re.compile(r'\[PLOT:([^\]]+)\]')
+
+# Absolute path of the plots directory so we can convert to a URL-safe relative path
+_PLOTS_DIR_ABS = str(Path("static/plots").resolve())
+
+
 class WebDataSageAgent(DataSageAgent):
     def _execute_tool(self, tool_name: str, tool_input: dict) -> str:
         if hasattr(_tl, "tool_calls"):
@@ -47,7 +56,25 @@ class WebDataSageAgent(DataSageAgent):
                 "name": tool_name,
                 "input_preview": json.dumps(tool_input, separators=(",", ":"))[:120],
             })
-        return super()._execute_tool(tool_name, tool_input)
+
+        result = super()._execute_tool(tool_name, tool_input)
+
+        # Extract any [PLOT:path] markers, convert to web-accessible URLs,
+        # and replace the markers with a human-readable note for Claude.
+        plot_paths = _PLOT_MARKER_RE.findall(result)
+        if plot_paths:
+            for abs_path in plot_paths:
+                filename = Path(abs_path).name
+                url = f"/static/plots/{filename}"
+                if hasattr(_tl, "plots"):
+                    _tl.plots.append(url)
+            # Replace markers with a note so Claude knows a plot was made
+            result = _PLOT_MARKER_RE.sub(
+                "(A plot was generated and will be displayed in the chat UI)",
+                result,
+            )
+
+        return result
 
 
 # ── Session helpers ───────────────────────────────────────────────────────────
@@ -87,13 +114,15 @@ def chat():
 
     with session_data["lock"]:
         _tl.tool_calls = []
+        _tl.plots = []
         try:
             response_text = session_data["agent"].chat(user_message)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
         tools_used = list(_tl.tool_calls)
+        plots = list(_tl.plots)
 
-    return jsonify({"response": response_text, "tools": tools_used})
+    return jsonify({"response": response_text, "tools": tools_used, "plots": plots})
 
 
 @app.route("/new", methods=["POST"])

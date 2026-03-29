@@ -172,6 +172,33 @@
     .bubble hr { border: none; border-top: 1px solid #2d3148; margin: 0.8em 0; }
     .bubble a { color: #7c8cf8; }
 
+    /* ── Plot images ── */
+    .plot-container { margin-top: 10px; }
+    .plot-img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid #2d3148;
+      display: block;
+      margin-top: 8px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .plot-img:hover { opacity: 0.9; }
+
+    /* ── Lightbox ── */
+    #lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+
     /* ── Loading dots ── */
     .loading-dots {
       display: flex;
@@ -297,6 +324,9 @@
   <button id="send-btn">Send</button>
 </div>
 
+<!-- Lightbox for full-size plot view -->
+<div id="lightbox"><img id="lightbox-img" src="" alt="plot"></div>
+
 <div id="modal-overlay">
   <div id="modal-box">
     <h2>Memory</h2>
@@ -336,7 +366,7 @@
   }
 
   // ── Append a message bubble ──────────────────────────────────────────────
-  function appendMessage(role, text, tools = [], isError = false) {
+  function appendMessage(role, text, tools = [], isError = false, plots = []) {
     const group = document.createElement("div");
     group.className = `message-group ${role}`;
 
@@ -356,8 +386,23 @@
     const bubble = document.createElement("div");
     bubble.className = "bubble" + (isError ? " error-bubble" : "");
     bubble.innerHTML = role === "agent" ? marked.parse(text) : escapeHtml(text);
-    group.appendChild(bubble);
 
+    // Render any plots below the text
+    if (plots.length > 0) {
+      const plotContainer = document.createElement("div");
+      plotContainer.className = "plot-container";
+      plots.forEach(url => {
+        const img = document.createElement("img");
+        img.src = url;
+        img.className = "plot-img";
+        img.alt = "Generated plot";
+        img.addEventListener("click", () => openLightbox(url));
+        plotContainer.appendChild(img);
+      });
+      bubble.appendChild(plotContainer);
+    }
+
+    group.appendChild(bubble);
     messagesEl.appendChild(group);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     return group;
@@ -411,7 +456,7 @@
       if (data.error) {
         appendMessage("agent", `**Error:** ${data.error}`, [], true);
       } else {
-        appendMessage("agent", data.response, data.tools || []);
+        appendMessage("agent", data.response, data.tools || [], false, data.plots || []);
       }
     } catch (err) {
       hideLoading();
@@ -476,6 +521,19 @@
   );
   modalOverlay.addEventListener("click", e => {
     if (e.target === modalOverlay) modalOverlay.classList.remove("open");
+  });
+
+  // ── Lightbox ─────────────────────────────────────────────────────────────
+  const lightbox    = document.getElementById("lightbox");
+  const lightboxImg = document.getElementById("lightbox-img");
+
+  function openLightbox(url) {
+    lightboxImg.src = url;
+    lightbox.classList.add("open");
+  }
+  lightbox.addEventListener("click", () => lightbox.classList.remove("open"));
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") lightbox.classList.remove("open");
   });
 
   // ── Welcome ──────────────────────────────────────────────────────────────
