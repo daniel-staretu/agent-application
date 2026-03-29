@@ -217,6 +217,14 @@ _PLOTS_DIR = r'{plots_dir}'
 _os.makedirs(_PLOTS_DIR, exist_ok=True)
 
 def _save_figure():
+    fig = plt.gcf()
+    axes = fig.get_axes()
+    if not axes or not any(
+        ax.has_data() or ax.lines or ax.collections or ax.patches or ax.images
+        for ax in axes
+    ):
+        plt.close('all')
+        return
     path = _os.path.join(_PLOTS_DIR, _uuid.uuid4().hex + '.png')
     _orig_savefig(path, dpi=130, bbox_inches='tight',
                   facecolor=plt.rcParams['figure.facecolor'])
